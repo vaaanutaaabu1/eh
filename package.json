@@ -1,0 +1,41 @@
+{
+  "name": "AHT-fullstack",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AHT frontend and Node.js backend application",
+  "scripts": {
+    "start": "node backend/server.js",
+    "dev": "nodemon backend/server.js",
+    "create-admin": "node backend/scripts/create-admin.js",
+    "install-backend": "npm install --prefix backend",
+    "db:check": "node backend/scripts/db-check.js",
+    "export-files": "node backend/scripts/export-files.js",
+    "laptop:server": "node laptop/supervisor.js",
+    "laptop:server-here": "node laptop/file-server.js",
+    "laptop:backup": "node laptop/backup.js",
+    "laptop:restore": "node laptop/restore.js",
+    "laptop:migrate-files": "node laptop/migrate-files.js",
+    "laptop:schedule": "node laptop/schedule.js"
+  },
+  "main": "backend/server.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "mammoth": "^1.8.0",
+    "multer": "^2.4.0",
+    "nodemailer": "^7.0.6",
+    "pdf-parse": "^1.1.1",
+    "pg": "^8.23.1",
+    "sharp": "^0.33.5",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  }
+}

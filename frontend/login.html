@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><script>if(location.protocol==="file:")document.write('<script src="js/file-mode.js?v=1m"><\/script>')</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Sign in | Expert Help</title>
+<link rel="icon" href="/favicon.png">
+<link rel="stylesheet" href="/css/account.css?v=14">
+</head>
+<body data-page="login">
+<div id="site-header"></div>
+<main class="wrap">
+  <section class="card auth" id="authCard">
+
+    <!-- 1. start: Google first, or e-mail -->
+    <div class="view" id="vStart">
+      <div id="gWrap"><div id="gbtn"></div></div>
+      <div class="or2"><span>or</span></div>
+      <button class="btn-out" type="button" id="goEmail">Sign up with email</button>
+      <p class="alt big">Already have an account? <a href="#signin" data-go="signin">Sign in</a></p>
+    </div>
+
+    <!-- 2. sign up with e-mail: name, e-mail, password, "I'm not a robot" -->
+    <form class="view" id="signupForm" novalidate hidden>
+      <div class="field">
+        <label for="name">Name</label>
+        <div class="box"><input id="name" name="name" autocomplete="name" required></div>
+        <div class="msg" id="nameMsg"></div>
+      </div>
+      <div class="field">
+        <label for="email">Email address</label>
+        <div class="box"><input id="email" name="email" type="email" autocomplete="email" required></div>
+        <div class="msg" id="emailMsg"></div>
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <div class="box"><input id="password" name="password" type="password" autocomplete="new-password" required><button class="eye" type="button" data-eye="password" aria-label="Show password"></button></div>
+        <div class="meter"><i id="meter"></i></div>
+        <div class="msg" id="passwordMsg"></div>
+      </div>
+      <div class="field cap"><div id="rcBox"></div><div class="msg" id="captchaMsg"></div></div>
+      <button class="btn-solid" type="submit" id="signupBtn">Create My Account</button>
+      <p class="alt big">Already have an account? <a href="#signin" data-go="signin">Sign in</a></p>
+    </form>
+
+    <!-- 3. sign in -->
+    <form class="view" id="loginForm" novalidate hidden>
+      <div class="field">
+        <label for="identifier">Email address</label>
+        <div class="box"><input id="identifier" name="identifier" autocomplete="username" required></div>
+        <div class="msg" id="identifierMsg"></div>
+      </div>
+      <div class="field">
+        <label for="lpassword">Password</label>
+        <div class="box"><input id="lpassword" name="password" type="password" autocomplete="current-password" required><button class="eye" type="button" data-eye="lpassword" aria-label="Show password"></button></div>
+        <div class="msg" id="lpasswordMsg"></div>
+      </div>
+      <div class="row-between"><span></span><a href="#forgot" data-go="forgot">Forgot password?</a></div>
+      <button class="btn-solid" type="submit" id="loginBtn">Sign In</button>
+      <p class="alt big">New here? <a href="#email" data-go="signup">Create an account</a></p>
+    </form>
+
+    <!-- 4. forgot password -->
+    <form class="view" id="forgotForm" novalidate hidden>
+      <h2 class="vt">Reset your password</h2>
+      <p class="sub">Enter your email address and we'll email you a new password.</p>
+      <div class="field">
+        <label for="fIdent">Email address</label>
+        <div class="box"><input id="fIdent" autocomplete="username" required></div>
+      </div>
+      <button class="btn-solid" type="submit" id="forgotBtn">Email me a new password</button>
+      <p class="alt big"><a href="#signin" data-go="signin">&larr; Back to sign in</a></p>
+    </form>
+  </section>
+
+  <section class="card" id="doneCard" hidden>
+    <div class="done">
+      <div class="tick" data-i="check"></div>
+      <h2>You're all set!</h2>
+      <p id="doneMsg"></p>
+      <div class="steps">
+        <span>1. We've emailed your login details to you (check spam too).</span>
+        <span>2. Sign in any time with your <b>email address</b> and password.</span>
+      </div>
+      <a class="btn" id="doneGo" href="/account" style="text-decoration:none">Go to my account</a>
+      <p class="fine" id="doneRedir" aria-live="polite"></p>
+    </div>
+  </section>
+</main>
+<div id="toasts" role="status" aria-live="polite"></div>
+<script src="/js/account.js?v=20261101cap3" defer></script>
+<script defer src="/js/presence.js?v=20261020p1m"></script>
+<script>try{if(localStorage.getItem("ah_upq")){var s=document.createElement("script");s.src="/js/upload-manager.js?v=20261031d1";document.head.appendChild(s)}}catch(e){}</script>
+<script src="/js/site-header.js?v=20261031e"></script><script src="/js/study-resources.js?v=6"></script>
+</body>
+</html>

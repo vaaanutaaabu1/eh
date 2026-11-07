@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><script src="/js/auth-gate.js?v=2"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Plagiarism Checker & Grammar Checker | Expert Help</title>
+<meta name="description" content="Check your text for plagiarism against the live web and fix grammar, spelling, punctuation and style, all on one page. Free to try, full reports for $10/month.">
+<link rel="canonical" href="/tools/plagiarism-grammar-checker">
+<meta name="robots" content="index, follow">
+<link href="/favicon.png" rel="icon" type="image/png">
+<style>
+:root{--ink:#1c2233;--mut:#667085;--line:#e4e7ee;--acc:#4f46e5;--acc2:#7c3aed;--ok:#16a34a;--bad:#dc2626;--warn:#d97706}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,sans-serif;color:var(--ink);background:radial-gradient(circle at 6% 0,#fde7f3 0,transparent 42%),radial-gradient(circle at 96% 8%,#e6e3ff 0,transparent 40%),#f6f7fb;background-attachment:fixed}
+:focus-visible{outline:3px solid #a5b4fc;outline-offset:2px}
+.wrap{max-width:1180px;margin:0 auto;padding:15px 18px 80px}
+.hero{text-align:center;margin:6px 0 18px}.hero h1{font-size:2.35rem;line-height:1.15;margin:0 0 8px}.hero p{margin:0 auto;max-width:720px;color:var(--mut);font-size:1.05rem;line-height:1.55}
+.tabs{display:flex;justify-content:center;gap:6px;margin:0 auto 16px;background:#fff;border:1px solid var(--line);border-radius:999px;padding:5px;width:max-content;max-width:100%;box-shadow:0 6px 18px rgba(30,40,90,.06)}
+.tabs button{border:0;background:none;border-radius:999px;padding:10px 20px;font:700 14.5px system-ui,sans-serif;color:var(--mut);cursor:pointer;display:flex;align-items:center;gap:8px;white-space:nowrap}
+.tabs button.on{background:linear-gradient(135deg,var(--acc),var(--acc2));color:#fff;box-shadow:0 6px 16px rgba(79,70,229,.3)}
+.card{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);background:#fff;border:1px solid var(--line);border-radius:22px;box-shadow:0 18px 50px rgba(30,40,90,.1);overflow:hidden;min-height:470px}
+.left{padding:18px 20px 14px;display:flex;flex-direction:column;min-width:0}
+.tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.tools .sp{flex:1}
+.b{border:0;border-radius:11px;padding:10px 18px;font:700 14px system-ui,sans-serif;cursor:pointer;color:#fff;background:linear-gradient(135deg,var(--acc),var(--acc2));box-shadow:0 6px 16px rgba(79,70,229,.28);display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none}
+.b:hover{filter:brightness(1.07)}.b:disabled{opacity:.5;cursor:not-allowed;box-shadow:none}
+.b.g{background:#eef2ff;color:#3730a3;box-shadow:none}.b.o{background:#fff;color:var(--acc);border:1.5px solid var(--acc);box-shadow:none}.b.sm{padding:7px 13px;font-size:13px}.b.big{padding:14px 26px;font-size:15.5px;border-radius:13px}
+.b.ok{background:linear-gradient(135deg,#16a34a,#0f766e);box-shadow:0 6px 16px rgba(22,163,74,.28)}
+#ta,#view{flex:1;min-height:300px;max-height:520px;width:100%;border:1.5px solid var(--line);border-radius:14px;padding:14px 16px;font:15.5px/1.75 Inter,system-ui,sans-serif;color:#0f172a;outline:none}
+#ta{resize:vertical}#ta:focus{border-color:var(--acc);box-shadow:0 0 0 4px rgba(79,70,229,.12)}
+#view{overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:#fff}
+.left[data-mode=edit] #view,.left[data-mode=view] #ta{display:none}
+.left[data-mode=view] #optq{display:none}
+.foot{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px}.foot .cnt{flex:1;color:var(--mut);font-size:13.5px;min-width:150px}.foot .cnt b{color:var(--ink)}.foot .cnt.warn{color:var(--bad)}
+.opt{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--mut);cursor:pointer}
+.err{color:var(--bad);font-size:13.5px;margin-top:8px;min-height:18px}
+.up.drag{outline:2px dashed var(--acc)}
+.right{background:linear-gradient(160deg,#eef0ff,#f6f3ff 50%,#fff7e6);border-left:1px solid var(--line);padding:22px 22px;min-width:0;display:flex;flex-direction:column;align-items:center;text-align:center;overflow:auto;max-height:640px}
+.right h2{font-size:1.35rem;margin:6px 0 4px}.right .hint{color:var(--mut);font-size:14px;line-height:1.55;margin:0}
+.ill{width:92px;height:92px;border-radius:26px;display:grid;place-items:center;color:#fff;background:linear-gradient(135deg,var(--acc),var(--acc2));box-shadow:0 14px 30px rgba(79,70,229,.3);margin:20px 0 14px}
+.feat{list-style:none;padding:0;margin:18px 0 0;text-align:left;font-size:14.5px;display:grid;gap:9px;width:100%;max-width:290px}
+.feat li{display:flex;gap:10px;align-items:flex-start;line-height:1.4}.feat svg{flex:none;color:var(--ok);margin-top:2px}.feat li.lk{color:#94a3b8}.feat li.lk svg{color:#94a3b8}
+.big-n{font-size:64px;line-height:1;font-weight:800;margin:14px 0 2px;letter-spacing:-2px}.big-n small{font-size:30px;font-weight:700}.big-n.blur{filter:blur(11px);user-select:none}
+.lbl{font-weight:700;font-size:16px;margin-bottom:14px}
+.spin{width:44px;height:44px;border-radius:50%;border:5px solid #dfe3ff;border-top-color:var(--acc);animation:sp 0.9s linear infinite;margin:40px auto 16px}@keyframes sp{to{transform:rotate(360deg)}}
+.steps{font-size:13.5px;color:var(--mut);min-height:20px}
+.gauge{width:200px;max-width:100%;margin:6px auto 0}.gauge text{font-family:system-ui}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;width:100%;margin:12px 0}.stats div{background:#fff;border:1px solid var(--line);border-radius:12px;padding:8px 4px;font-size:12px;color:var(--mut)}.stats b{display:block;font-size:17px;color:var(--ink)}
+.verdict{display:inline-block;font-weight:700;font-size:13px;border-radius:99px;padding:5px 13px;margin-bottom:6px}
+.v-hi{background:#fee2e2;color:#991b1b}.v-mid{background:#fef3c7;color:#92400e}.v-lo{background:#dcfce7;color:#166534}
+.src{width:100%;text-align:left;margin-top:6px}.src h3{font-size:14px;margin:12px 0 8px}
+.si{display:block;background:#fff;border:1px solid var(--line);border-radius:12px;padding:9px 12px;margin-bottom:8px;color:inherit;text-decoration:none;font-size:13.5px}.si:hover,.si.on{border-color:var(--acc);box-shadow:0 0 0 3px rgba(79,70,229,.12)}
+.si b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.si small{color:var(--mut)}.si .pc{float:right;font-weight:800;color:var(--bad);margin-left:8px}
+.lockbox{width:100%;background:#fff;border:1.5px dashed #a5b4fc;border-radius:14px;padding:14px;margin-top:10px;font-size:13.5px;color:#334155;text-align:left}.lockbox b{display:block;margin-bottom:4px}
+.lockbox .b{margin-top:10px;width:100%}
+.sent{border-radius:3px;cursor:pointer}.sent.m{background:#fecaca}.sent.p{background:#fde68a}.sent.k{background:repeating-linear-gradient(45deg,#e0e7ff,#e0e7ff 6px,#eef2ff 6px,#eef2ff 12px)}.sent.on{outline:2px solid var(--acc)}
+.leg{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--mut);margin-top:8px}.leg i{display:inline-block;width:14px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.gi{border-radius:3px;cursor:pointer;border-bottom:2.5px solid;background:rgba(0,0,0,.03)}.gi.grammar{border-color:#dc2626}.gi.spelling{border-color:#dc2626;border-bottom-style:dotted}.gi.punctuation{border-color:#d97706}.gi.style{border-color:#2563eb}.gi.clarity{border-color:#7c3aed}.gi.locked{border-color:#94a3b8;border-bottom-style:dashed}.gi.on{background:#e0e7ff}
+.cats{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:8px 0}.cat{font-size:12px;font-weight:700;border-radius:99px;padding:4px 10px;background:#fff;border:1px solid var(--line)}
+.cat.grammar,.cat.spelling{color:#b91c1c}.cat.punctuation{color:#b45309}.cat.style{color:#1d4ed8}.cat.clarity{color:#6d28d9}
+.ic{background:#fff;border:1px solid var(--line);border-radius:13px;padding:11px 12px;margin-bottom:9px;text-align:left;font-size:13.5px}.ic.on{border-color:var(--acc);box-shadow:0 0 0 3px rgba(79,70,229,.12)}
+.ic .t{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px}.ic .t.grammar,.ic .t.spelling{color:#b91c1c}.ic .t.punctuation{color:#b45309}.ic .t.style{color:#1d4ed8}.ic .t.clarity{color:#6d28d9}
+.ic .m{color:#334155;margin:2px 0 8px;line-height:1.45}.ic del{color:#b91c1c}.ic ins{color:#15803d;text-decoration:none;font-weight:700}
+.ic .a{display:flex;gap:6px;flex-wrap:wrap}.ic.lk{filter:blur(0);background:repeating-linear-gradient(45deg,#f8fafc,#f8fafc 8px,#f1f5f9 8px,#f1f5f9 16px);color:#94a3b8;text-align:center}
+.pill{border:1.5px solid #c7d2fe;background:#eef2ff;color:#3730a3;border-radius:9px;padding:5px 10px;font:700 13px system-ui;cursor:pointer}.pill:hover{background:#e0e7ff}.pill.ok{background:#16a34a;border-color:#16a34a;color:#fff}.pill.x{background:#fff;border-color:var(--line);color:var(--mut)}
+.rd{width:100%;display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:6px 0 4px;font-size:12.5px;color:var(--mut)}.rd div{background:#fff;border:1px solid var(--line);border-radius:10px;padding:7px}.rd b{display:block;color:var(--ink);font-size:15px}
+.ovl{position:fixed;inset:0;z-index:100002;background:rgba(15,23,42,.6);backdrop-filter:blur(3px);display:none;align-items:center;justify-content:center;padding:14px}.ovl.on{display:flex}
+.modal{background:#fff;border-radius:22px;width:min(780px,100%);max-height:calc(100vh - 28px);overflow:auto;padding:26px 24px 22px;position:relative;box-shadow:0 30px 80px rgba(0,0,0,.4)}
+.modal .x{position:absolute;right:14px;top:12px;border:0;background:#f1f5f9;width:34px;height:34px;border-radius:10px;font-size:20px;cursor:pointer}
+.modal h2{margin:0 0 4px;font-size:1.5rem;text-align:center}.modal .sub{margin:0 0 18px;text-align:center;color:var(--mut)}
+.plans{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.plan{border:2px solid var(--line);border-radius:18px;padding:18px;display:flex;flex-direction:column;position:relative}
+.plan.pro{border-color:var(--acc);background:linear-gradient(180deg,#f5f3ff,#fff 60%);box-shadow:0 10px 30px rgba(79,70,229,.16)}
+.plan .tag{position:absolute;right:14px;top:-11px;background:linear-gradient(135deg,var(--acc),var(--acc2));color:#fff;font-size:11px;font-weight:800;border-radius:99px;padding:4px 11px}
+.plan h3{margin:0;font-size:1.1rem}.plan .pr{font-size:2.1rem;font-weight:800;margin:4px 0 10px}.plan .pr small{font-size:.9rem;color:var(--mut);font-weight:600}
+.plan ul{list-style:none;padding:0;margin:0 0 16px;display:grid;gap:8px;font-size:14px;flex:1}.plan li{display:flex;gap:8px;line-height:1.4}.plan li svg{flex:none;color:var(--ok);margin-top:2px}.plan li.no{color:#94a3b8}.plan li.no svg{color:#cbd5e1}
+.mnote{margin:14px 0 0;text-align:center;font-size:12.5px;color:var(--mut)}
+.how{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:30px 0 0}.how div{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px;box-shadow:0 8px 24px rgba(30,40,90,.05)}
+.how i{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:#eef2ff;color:var(--acc);font-style:normal;font-weight:800;margin-bottom:10px}.how b{display:block;margin-bottom:4px}.how span{color:var(--mut);font-size:.93rem}
+.faq{margin-top:26px;background:#fff;border:1px solid var(--line);border-radius:16px;padding:6px 20px}.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq details:last-child{border:0}.faq summary{cursor:pointer;font-weight:700}.faq p{margin:8px 0 0;color:var(--mut);line-height:1.6}
+.hide{display:none!important}
+@media(max-width:600px){.tabs{width:100%}.tabs button{flex:1;justify-content:center;padding:10px 6px;font-size:13px;gap:5px}.tabs svg{display:none}}
+@media(max-width:900px){.card{grid-template-columns:1fr}.right{border-left:0;border-top:1px solid var(--line);max-height:none}.plans,.how{grid-template-columns:1fr}.hero h1{font-size:1.75rem}}
+@media(prefers-reduced-motion:reduce){.spin{animation:none}}
+</style></head><body>
+<div id="site-header"></div>
+<div class="wrap">
+<section class="hero"><h1 id="h1">Plagiarism &amp; Grammar Checker</h1>
+<p id="hsub">Compare your text with the live web, then fix grammar, spelling, punctuation and style. Both tools, one page.</p></section>
+
+<div class="tabs" role="tablist" aria-label="Choose a checker">
+<button type="button" role="tab" id="tb-plag" class="on" aria-selected="true"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><circle cx="11" cy="14" r="2.6"/><path d="M13 16l2.5 2.5"/></svg>Plagiarism Checker</button>
+<button type="button" role="tab" id="tb-gram" aria-selected="false"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l4-12 4 12M5.5 16h5"/><path d="M15 14l3 3 5-6"/></svg>Grammar Checker</button>
+</div>
+
+<main class="card" id="card">
+<section class="left" id="left" data-mode="edit" aria-label="Your text">
+<div class="tools">
+<button class="b g sm" id="pick" type="button">&#128206; Upload file</button><input type="file" id="file" accept=".txt,.md,.docx,.pdf" class="hide">
+<button class="b g sm" id="paste" type="button">Paste</button>
+<button class="b g sm" id="sample" type="button">Try a sample</button>
+<span class="sp"></span>
+<button class="b g sm hide" id="edit" type="button">&#9998; Edit text</button>
+<button class="b g sm" id="clear" type="button">Clear</button>
+</div>
+<textarea id="ta" placeholder="Paste your text here, or upload a .txt, .docx or .pdf file (up to 5,000 words)." spellcheck="false" aria-label="Text to check"></textarea>
+<div id="view" tabindex="0" aria-label="Checked text"></div>
+<div class="leg hide" id="leg"></div>
+<div class="foot"><span class="cnt" id="cnt"><b>0</b>/5,000 words</span>
+<label class="opt" id="optq"><input type="checkbox" id="exq"> Exclude quotes</label>
+<button class="b" id="go" type="button" disabled>Check plagiarism</button></div>
+<div class="err" id="err" role="alert"></div>
+</section>
+
+<aside class="right" id="rp" aria-live="polite"></aside>
+</main>
+
+<section class="how" aria-label="How it works">
+<div><i>1</i><b>Paste or upload</b><span>Paste text or upload a .txt, .docx or .pdf. Switch between the two checkers at any time.</span></div>
+<div><i>2</i><b>We check it</b><span>Plagiarism: phrases are searched on the live web and every sentence is compared with the pages found. Grammar: spelling, grammar, punctuation and style rules.</span></div>
+<div><i>3</i><b>See your results</b><span>Choose Free for the headline numbers, or subscribe for $10/month for the full report with sources and one-click fixes.</span></div>
+</section>
+<section class="faq" aria-label="Questions">
+<details><summary>How does the plagiarism check work?</summary><p>Distinctive phrases from your text are searched on the web, the pages that come back are read, and every sentence is compared with them. Sentences that share long runs of words with a page are marked and linked to that page.</p></details>
+<details><summary>Is it the same as Turnitin?</summary><p>No. It checks the open web, so it finds copied and lightly reworded passages from public pages. It cannot see paywalled journals or other students' private submissions, which are in Turnitin's own database. A low score means nothing was found online, not a guarantee for your school's checker.</p></details>
+<details><summary>What does Free include, and what does $10/month add?</summary><p>Free: the headline similarity or grammar score, counts, readability and a small preview, up to 3 checks of each kind per day. $10/month: every matched passage with its source link, every grammar fix with one-click accept, a downloadable report, and 30 plagiarism checks a month (grammar checks are unlimited), plus the 30 unlocks, 30 citations, 30 AI detections and 30 Ask AI questions of the plan. Cancel any time.</p></details>
+<details><summary>Is my text stored?</summary><p>Your text is used only to produce the result on this page. Phrases from it are sent to a search engine to find matching pages.</p></details>
+</section>
+</div>
+
+<div class="ovl" id="ovl" role="dialog" aria-modal="true" aria-labelledby="mh"><div class="modal">
+<button class="x" type="button" id="mx" aria-label="Close">&times;</button>
+<h2 id="mh">See your results</h2><p class="sub" id="ms">Choose how you want to view them.</p>
+<div class="plans">
+<div class="plan"><h3>Free</h3><div class="pr">$0</div>
+<ul id="fl"></ul><button class="b o big" id="pf" type="button">Continue with Free</button></div>
+<div class="plan pro"><span class="tag">FULL REPORT</span><h3>Subscribe</h3><div class="pr">$10<small> / month</small></div>
+<ul id="pl"></ul><button class="b big" id="ps" type="button">Subscribe &ndash; $10/month</button></div>
+</div>
+<div class="err" id="merr" style="text-align:center"></div>
+<p class="mnote">Secure payment by Stripe. Cancel any time from your account page.</p>
+</div></div>
+
+<script src="/js/site-header.js?v=20261031e"></script><script src="/js/study-resources.js?v=6"></script><script src="/js/writing-check.js?v=1"></script>
+<script src="/js/site-footer.js?v=2" defer></script>
+</body></html>
