@@ -11,6 +11,3 @@ dkim-private.pem
 *.zip.enc
 
 
-# laptop kit (passwords, uploaded files)
-laptop/laptop.env
-laptop-data/
