@@ -65,8 +65,8 @@ async function processFile(f, titleIn, ctx, out, rejected, noCredit, release) {
     const ex = await S.extract(f);
     ex.pages = ex.pages.map(S.tidy);
     /* Word / Excel / text files are converted by LibreOffice so they are shown exactly as uploaded; if that is unavailable they fall back to text. */
-    let imgs = null;
-    if (["doc", "text", "sheet"].includes(ex.kind)) { const o = await S.officeRender(f, ex.kind); if (o) { imgs = o.imgs; if (o.pages.length) ex.pages = o.pages; } }
+    let imgs = null, officePdf = null;
+    if (["doc", "text", "sheet"].includes(ex.kind)) { const o = await S.officeRender(f, ex.kind); if (o) { imgs = o.imgs; officePdf = o.pdf || null; if (o.pages.length) ex.pages = o.pages; } }
     else imgs = await S.renderPages(f, ex.kind);
     /* Documents uploaded to push links / sell SEO are not accepted. */
     const spam = S.seoSpamReason((titleIn || "") + "\n" + ex.pages.join("\n"));
@@ -97,8 +97,12 @@ async function processFile(f, titleIn, ctx, out, rejected, noCredit, release) {
     S.recordUploaderCountry(d.id, ctx.ip, ctx.cc);   /* flag only; runs in the background */
     /* this document (original file + all its page images) goes to the next Neon database in rotation */
     let shard;
-    try { shard = await SH.pick(); await query("INSERT INTO doc_files(doc_id,data) VALUES($1,$2)", [d.id, await SH.store(f.buffer, shard)]); }
+    /* Only the REDUCED file goes to the database: anything over STORE_LIMIT_MB (5) is shrunk first, text kept sharp (see reduceService). */
+    const red = await require("../services/reduceService").reduceForStorage({ buffer: f.buffer, name: f.originalname, mime: f.mimetype, kind: ex.kind, pdf: officePdf });
+    try { shard = await SH.pick(); await query("INSERT INTO doc_files(doc_id,data) VALUES($1,$2)", [d.id, await SH.store(red.buffer, shard)]); }
     catch (e) { await query("DELETE FROM docs WHERE id=$1", [d.id]).catch(() => {}); throw e; }
+    await query("UPDATE docs SET orig_bytes=$2, stored_bytes=$3, reduced=$4, reduce_note=$5, filename=$6, mime=$7 WHERE id=$1",
+      [d.id, red.originalBytes, red.storedBytes, red.reduced, red.note || (red.overLimit ? "above the limit" : null), red.filename.slice(0, 300), red.mime]).catch((e) => console.warn("[DOCS] size record:", e.message));
     try {   /* who uploaded what (copyright / takedown evidence). No IP address, forwarded-for or browser string is stored. */
       const u = ctx.user ? (await query("SELECT name,email,phone FROM users WHERE id=$1", [ctx.user.id])).rows[0] || {} : {};
       await query("INSERT INTO doc_upload_log(doc_id,user_id,user_name,user_email,user_phone,ip,forwarded_for,user_agent,title,original_filename,mime,size_bytes,sha256) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",

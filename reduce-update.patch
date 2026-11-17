@@ -1,0 +1,346 @@
+--- a/backend/routes/docs.js
++++ b/backend/routes/docs.js
+@@ -65,8 +65,8 @@
+     const ex = await S.extract(f);
+     ex.pages = ex.pages.map(S.tidy);
+     /* Word / Excel / text files are converted by LibreOffice so they are shown exactly as uploaded; if that is unavailable they fall back to text. */
+-    let imgs = null;
+-    if (["doc", "text", "sheet"].includes(ex.kind)) { const o = await S.officeRender(f, ex.kind); if (o) { imgs = o.imgs; if (o.pages.length) ex.pages = o.pages; } }
++    let imgs = null, officePdf = null;
++    if (["doc", "text", "sheet"].includes(ex.kind)) { const o = await S.officeRender(f, ex.kind); if (o) { imgs = o.imgs; officePdf = o.pdf || null; if (o.pages.length) ex.pages = o.pages; } }
+     else imgs = await S.renderPages(f, ex.kind);
+     /* Documents uploaded to push links / sell SEO are not accepted. */
+     const spam = S.seoSpamReason((titleIn || "") + "\n" + ex.pages.join("\n"));
+@@ -97,8 +97,12 @@
+     S.recordUploaderCountry(d.id, ctx.ip, ctx.cc);   /* flag only; runs in the background */
+     /* this document (original file + all its page images) goes to the next Neon database in rotation */
+     let shard;
+-    try { shard = await SH.pick(); await query("INSERT INTO doc_files(doc_id,data) VALUES($1,$2)", [d.id, await SH.store(f.buffer, shard)]); }
++    /* Only the REDUCED file goes to the database: anything over STORE_LIMIT_MB (5) is shrunk first, text kept sharp (see reduceService). */
++    const red = await require("../services/reduceService").reduceForStorage({ buffer: f.buffer, name: f.originalname, mime: f.mimetype, kind: ex.kind, pdf: officePdf });
++    try { shard = await SH.pick(); await query("INSERT INTO doc_files(doc_id,data) VALUES($1,$2)", [d.id, await SH.store(red.buffer, shard)]); }
+     catch (e) { await query("DELETE FROM docs WHERE id=$1", [d.id]).catch(() => {}); throw e; }
++    await query("UPDATE docs SET orig_bytes=$2, stored_bytes=$3, reduced=$4, reduce_note=$5, filename=$6, mime=$7 WHERE id=$1",
++      [d.id, red.originalBytes, red.storedBytes, red.reduced, red.note || (red.overLimit ? "above the limit" : null), red.filename.slice(0, 300), red.mime]).catch((e) => console.warn("[DOCS] size record:", e.message));
+     try {   /* who uploaded what (copyright / takedown evidence). No IP address, forwarded-for or browser string is stored. */
+       const u = ctx.user ? (await query("SELECT name,email,phone FROM users WHERE id=$1", [ctx.user.id])).rows[0] || {} : {};
+       await query("INSERT INTO doc_upload_log(doc_id,user_id,user_name,user_email,user_phone,ip,forwarded_for,user_agent,title,original_filename,mime,size_bytes,sha256) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",
+--- a/backend/routes/admin.js
++++ b/backend/routes/admin.js
+@@ -30,18 +30,19 @@
+     query("SELECT COUNT(*)::int AS n FROM docs"),
+     query("SELECT COUNT(*)::int AS n FROM docs WHERE (created_at AT TIME ZONE $1)::date=(NOW() AT TIME ZONE $1)::date",[z]),
+     query("SELECT to_char((created_at AT TIME ZONE $1)::date,'YYYY-MM-DD') AS day,COUNT(*)::int AS n FROM docs WHERE created_at>NOW()-INTERVAL '40 days' GROUP BY 1 ORDER BY 1 DESC",[z]),
+-    query("SELECT to_char((NOW() AT TIME ZONE $1)::date,'YYYY-MM-DD') AS today",[z])]);
++    query("SELECT to_char((NOW() AT TIME ZONE $1)::date,'YYYY-MM-DD') AS today",[z]),
++    query("SELECT COUNT(*) FILTER (WHERE reduced)::int AS reduced, COUNT(*) FILTER (WHERE stored_bytes>$1)::int AS over, COALESCE(SUM(orig_bytes-stored_bytes) FILTER (WHERE reduced),0)::bigint AS saved FROM docs",[(Number(process.env.STORE_LIMIT_MB||5))*1048576])]);
+   try{
+     let d;try{d=await run(tz);}catch(e){tz="UTC";d=await run(tz);}
+     res.set("Cache-Control","no-store");
+-    res.json({success:true,total:d[0].rows[0].n,today:d[1].rows[0].n,todayDate:d[3].rows[0].today,days:d[2].rows,tz});
++    res.json({success:true,total:d[0].rows[0].n,today:d[1].rows[0].n,todayDate:d[3].rows[0].today,days:d[2].rows,tz,reduced:d[4].rows[0].reduced,overLimit:d[4].rows[0].over,savedBytes:Number(d[4].rows[0].saved),limitMB:Number(process.env.STORE_LIMIT_MB||5)});
+   }catch(e){console.error("[ADMIN] docs stats:",e.message);res.status(500).json({success:false,message:"Could not load the totals."});}
+ });
+ /* Document list: uploader NAME and country flag only (no e-mail, no IP address). Searches title, course, school and uploader name. */
+ r.get("/docs",requireAdmin,async(req,res)=>{
+   try{
+     const q=String(req.query.q||"").trim().slice(0,100);
+-    const {rows}=await query(`SELECT d.id,d.title,d.slug,d.school,d.course,d.kind,d.page_count,d.views,d.created_at,d.removed,
++    const {rows}=await query(`SELECT d.id,d.title,d.slug,d.school,d.course,d.kind,d.page_count,d.views,d.created_at,d.removed,d.orig_bytes,d.stored_bytes,d.reduced,d.reduce_note,
+         COALESCE(NULLIF(u.name,''),(SELECT NULLIF(l.user_name,'') FROM doc_upload_log l WHERE l.doc_id=d.id ORDER BY l.id LIMIT 1),'Guest') AS owner_name,
+         NULLIF(d.up_cc,'') AS country_code,(SELECT COUNT(*)::int FROM doc_unlocks k WHERE k.doc_id=d.id) AS unlocks
+       FROM docs d LEFT JOIN users u ON u.id=d.owner_id
+--- a/backend/services/docService.js
++++ b/backend/services/docService.js
+@@ -94,6 +94,11 @@
+     await query("CREATE TABLE IF NOT EXISTS doc_flags (k VARCHAR(40) PRIMARY KEY)");
+     if (!(await query("SELECT 1 FROM doc_flags WHERE k='bg_v2'")).rowCount) { await query("UPDATE doc_pages SET bg=NULL WHERE preview IS NOT NULL"); await query("INSERT INTO doc_flags(k) VALUES('bg_v2')"); }
+   } catch (e) { console.warn("[DOCS] bg migration:", e.message); }
++  /* size reduction: what was uploaded, what is really stored (<= STORE_LIMIT_MB, default 5), whether it was reduced, and why not when it could not be */
++  await query("ALTER TABLE docs ADD COLUMN IF NOT EXISTS orig_bytes BIGINT");
++  await query("ALTER TABLE docs ADD COLUMN IF NOT EXISTS stored_bytes BIGINT");
++  await query("ALTER TABLE docs ADD COLUMN IF NOT EXISTS reduced BOOLEAN NOT NULL DEFAULT FALSE");
++  await query("ALTER TABLE docs ADD COLUMN IF NOT EXISTS reduce_note TEXT");
+   await query("ALTER TABLE docs ADD COLUMN IF NOT EXISTS sig TEXT");      /* MinHash fingerprint of the text, used to refuse near-duplicate uploads */
+   await query("ALTER TABLE docs ADD COLUMN IF NOT EXISTS nsh INT");       /* number of word shingles in the text */
+   await query("ALTER TABLE docs ADD COLUMN IF NOT EXISTS fsha VARCHAR(64)");   /* sha-256 of the uploaded file: the exact same file is never stored twice */
+@@ -320,7 +325,7 @@
+   if (!imgs) return null;
+   let pages = [];
+   try { pages = (await extract({ buffer: pdf, originalname: "x.pdf", mimetype: "application/pdf" })).pages.map(tidy); } catch (e) { /* text is optional */ }
+-  return { imgs, pages };
++  return { imgs, pages, pdf };   /* pdf: used by reduceService when the file is over the storage limit */
+ }
+ 
+ /* -> [{ full, preview }] per page, or null when sharp / poppler-utils are missing (callers then fall back to text). */
+--- a/backend/public/admin/admin.js
++++ b/backend/public/admin/admin.js
+@@ -262,7 +262,7 @@
+         const map={};(d.days||[]).forEach(x=>{map[x.day]=Number(x.n);});
+         const base=new Date((d.todayDate||new Date().toISOString().slice(0,10))+"T00:00:00Z"),cells=[];
+         for(let i=0;i<14;i++){const t=new Date(base.getTime()-i*864e5),k=t.toISOString().slice(0,10);cells.push({n:map[k]||0,label:i===0?"Today":t.toLocaleDateString("en-IN",{day:"numeric",month:"short",timeZone:"UTC"})});}
+-        box.innerHTML=`<div class="ds-tiles"><div class="ds-tile"><small>Total documents uploaded</small><strong>${Number(d.total).toLocaleString("en-IN")}</strong></div><div class="ds-tile today"><small>Uploaded today</small><strong>${Number(d.today).toLocaleString("en-IN")}</strong></div></div><div class="ds-days" role="list" aria-label="Documents uploaded per day">${cells.map(c=>`<div class="ds-day${c.n?" has":""}" role="listitem"><b>${c.n}</b><small>${esc(c.label)}</small></div>`).join("")}</div>`;
++        box.innerHTML=`<div class="ds-tiles"><div class="ds-tile"><small>Total documents uploaded</small><strong>${Number(d.total).toLocaleString("en-IN")}</strong></div><div class="ds-tile today"><small>Uploaded today</small><strong>${Number(d.today).toLocaleString("en-IN")}</strong></div><div class="ds-tile"><small>Files reduced (max ${Number(d.limitMB||5)} MB each)</small><strong>${Number(d.reduced||0).toLocaleString("en-IN")}</strong><small>${bytes(Number(d.savedBytes||0))} saved${Number(d.overLimit||0)?` · ${Number(d.overLimit)} still above the limit`:""}</small></div></div><div class="ds-days" role="list" aria-label="Documents uploaded per day">${cells.map(c=>`<div class="ds-day${c.n?" has":""}" role="listitem"><b>${c.n}</b><small>${esc(c.label)}</small></div>`).join("")}</div>`;
+       }catch(e){box.innerHTML='<div class="small">Could not load the upload totals.</div>';}
+     }
+     let docSeq=0;
+@@ -275,7 +275,7 @@
+         m.textContent=d.docs.length+" document"+(d.docs.length===1?"":"s");
+         box.innerHTML=d.docs.length?`<div class="table-wrap"><table><thead><tr><th style="width:34px"><input type="checkbox" id="docAllChk" aria-label="Select all documents on this list"></th><th>Title / link</th><th>Uploaded by</th><th>Country</th><th>Course</th><th>Type</th><th>Pages</th><th>Views</th><th>Uploaded</th><th></th></tr></thead><tbody>${d.docs.map(x=>`<tr>
+           <td><input type="checkbox" class="docChk" value="${Number(x.id)}" data-t="${esc(x.title)}" aria-label="Select ${esc(x.title)}"></td>
+-          <td><b>${esc(x.title)}</b>${x.removed?' <span class="small">(hidden)</span>':""}<br><a class="small" href="/doc/${encodeURIComponent(x.slug||"")}" target="_blank" rel="nofollow noopener noreferrer">/doc/${esc(x.slug||"—")}</a></td>
++          <td><b>${esc(x.title)}</b>${x.removed?' <span class="small">(hidden)</span>':""}<br><a class="small" href="/doc/${encodeURIComponent(x.slug||"")}" target="_blank" rel="nofollow noopener noreferrer">/doc/${esc(x.slug||"—")}</a><br><span class="small">${x.stored_bytes==null?"":(x.reduced?`Reduced ${bytes(Number(x.orig_bytes))} → ${bytes(Number(x.stored_bytes))}`:`Stored ${bytes(Number(x.stored_bytes))}`)+(x.reduce_note?` (${esc(x.reduce_note)})`:"")}</span></td>
+           <td><b>${esc(x.owner_name||"Guest")}</b></td>
+           <td style="white-space:nowrap">${x.country_code?countryFlag({CountryCode:x.country_code,Country:ccName(x.country_code)}):'<span class="small">—</span>'}</td>
+           <td><span class="small">${esc([x.course,x.school].filter(Boolean).join(" · "))}</span></td>
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -1,10 +1,11 @@
+ # Railway builds this file automatically when it exists (it takes priority over nixpacks.toml / Railpack).
+ # tesseract-ocr reads scanned pages so their text can be published as real HTML (SEO).
+ # poppler-utils provides "pdftoppm", which turns every PDF page into an image so it can be blurred on the server.
++# qpdf + ghostscript shrink every PDF without losing quality, and ghostscript / poppler bring a PDF over the storage limit down to it (reduceService.js).
+ # libreoffice (writer + calc) converts Word / Excel / text files to PDF so they are shown exactly as uploaded.
+ FROM node:20-bookworm-slim
+ RUN apt-get update \
+- && apt-get install -y --no-install-recommends poppler-utils tesseract-ocr tesseract-ocr-eng ca-certificates \
++ && apt-get install -y --no-install-recommends poppler-utils ghostscript qpdf tesseract-ocr tesseract-ocr-eng ca-certificates \
+     libreoffice-writer libreoffice-calc fonts-liberation fonts-dejavu-core fonts-noto-core \
+  && rm -rf /var/lib/apt/lists/*
+ WORKDIR /app
+--- a/backend/services/reduceService.js
++++ b/backend/services/reduceService.js
+@@ -0,0 +1,233 @@
++"use strict";
++/*
++ * Every uploaded file is made as small as possible BEFORE it is saved to the database, so only the reduced file is stored.
++ *
++ *   Step 1 - lossless, for EVERY file (also a 2 MB one): nothing is resampled or re-compressed lossily, so the quality is identical.
++ *            PDF : streams re-compressed, duplicate fonts / images merged (qpdf and / or Ghostscript, whichever is installed).
++ *            Image: lossless WebP (sharp), kept only when it is really smaller.
++ *            The smaller result is stored; if nothing gets smaller, the file is stored as uploaded.
++ *   Step 2 - only when the file is STILL over STORE_LIMIT_MB (default 5 MB): quality is lowered step by step, just far enough to fit.
++ *            PDF : 1) Ghostscript downsamples the pictures only, the text stays real vector text (best quality).
++ *                  2) otherwise poppler: every page becomes a JPEG (starting at 170 dpi, never below 100 dpi) rebuilt as a PDF with an
++ *                     invisible text layer, so the text can still be selected and searched.
++ *            Word / Excel / text: the LibreOffice PDF is reduced the same way and stored as a PDF.
++ *            Image: re-encoded as WebP with lower width and quality.
++ *
++ * It never throws: when a file cannot be reduced the original is returned and the reason is in `note`.
++ * Needs what the server already has (poppler-utils, sharp); qpdf and Ghostscript are optional (see Dockerfile).
++ */
++const fs = require("fs/promises");
++const os = require("os");
++const path = require("path");
++const { execFile } = require("child_process");
++
++const LIMIT = () => Math.max(1, Number(process.env.STORE_LIMIT_MB || 5)) * 1048576;
++const TIMEOUT = () => Number(process.env.REDUCE_TIMEOUT_MS || 240000);
++const run = (cmd, args) => new Promise((res, rej) => execFile(cmd, args, { timeout: TIMEOUT(), maxBuffer: 1 << 26 }, (e, out) => (e ? rej(e) : res(String(out)))));
++const mb = (n) => (n / 1048576).toFixed(1) + " MB";
++let sharp = null; try { sharp = require("sharp"); } catch { /* images are then stored as uploaded */ }
++
++/* ---------- small PDF writer: one JPEG per page + invisible text ---------- */
++function jpegInfo(b) {   /* width, height, colour components from the JPEG header */
++  let i = 2;
++  while (i + 9 < b.length) {
++    if (b[i] !== 0xff) { i++; continue; }
++    const m = b[i + 1];
++    if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) return { h: b.readUInt16BE(i + 5), w: b.readUInt16BE(i + 7), c: b[i + 9] };
++    i += 2 + b.readUInt16BE(i + 2);
++  }
++  return null;
++}
++const pdfStr = (t) => Buffer.from(String(t).replace(/[\\()]/g, "\\$&").replace(/[^\x20-\x7e\xa0-\xff]/g, " "), "latin1");
++
++function buildPdf(pages, title) {   /* pages: [{ jpeg, wpt, hpt, lines: [{ x, y, w, h, t }] }] (points, y from the top) */
++  const parts = []; const offs = []; let pos = 0;
++  const push = (x) => { const b = Buffer.isBuffer(x) ? x : Buffer.from(x, "latin1"); parts.push(b); pos += b.length; };
++  const obj = (n, body) => { offs[n] = pos; push(n + " 0 obj\n"); if (typeof body === "function") body(); else push(body); push("\nendobj\n"); };
++  const N = pages.length, F = 3 + N * 3;   /* objects: 1 catalog, 2 pages, (image, content, page) x N, then the font, then the info */
++  push("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
++  obj(1, "<< /Type /Catalog /Pages 2 0 R >>");
++  obj(2, "<< /Type /Pages /Count " + N + " /Kids [" + pages.map((p, k) => (5 + k * 3) + " 0 R").join(" ") + "] >>");
++  pages.forEach((p, k) => {
++    const img = 3 + k * 3, cnt = 4 + k * 3, pg = 5 + k * 3, ji = jpegInfo(p.jpeg);
++    obj(img, () => {
++      push("<< /Type /XObject /Subtype /Image /Width " + ji.w + " /Height " + ji.h + " /ColorSpace " + (ji.c === 1 ? "/DeviceGray" : "/DeviceRGB") + " /BitsPerComponent 8 /Filter /DCTDecode /Length " + p.jpeg.length + " >>\nstream\n");
++      push(p.jpeg); push("\nendstream");
++    });
++    const c = [Buffer.from("q " + p.wpt.toFixed(2) + " 0 0 " + p.hpt.toFixed(2) + " 0 0 cm /Im0 Do Q\n", "latin1")];
++    if (p.lines && p.lines.length) {   /* text render mode 3 = invisible: it can be selected / searched but is not drawn */
++      c.push(Buffer.from("BT 3 Tr\n", "latin1"));
++      for (const l of p.lines) {
++        const fs_ = Math.max(1, l.h * 0.85), n = Math.max(1, l.t.length), tz = Math.max(10, Math.min(400, (l.w / (n * fs_ * 0.5)) * 100));
++        c.push(Buffer.from("/F1 " + fs_.toFixed(2) + " Tf " + tz.toFixed(0) + " Tz 1 0 0 1 " + l.x.toFixed(2) + " " + (p.hpt - l.y - l.h * 0.8).toFixed(2) + " Tm (", "latin1"), pdfStr(l.t), Buffer.from(") Tj\n", "latin1"));
++      }
++      c.push(Buffer.from("ET\n", "latin1"));
++    }
++    const cb = Buffer.concat(c);
++    obj(cnt, () => { push("<< /Length " + cb.length + " >>\nstream\n"); push(cb); push("endstream"); });
++    obj(pg, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + p.wpt.toFixed(2) + " " + p.hpt.toFixed(2) + "] /Resources << /XObject << /Im0 " + img + " 0 R >> /Font << /F1 " + F + " 0 R >> >> /Contents " + cnt + " 0 R >>");
++  });
++  obj(F, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>");
++  const info = F + 1;
++  obj(info, "<< /Title (" + pdfStr(String(title || "Document").slice(0, 200)).toString("latin1") + ") /Producer (Doc Library) >>");
++  const xref = pos, n = info + 1;
++  push("xref\n0 " + n + "\n0000000000 65535 f \n");
++  for (let j = 1; j < n; j++) push(("0000000000" + offs[j]).slice(-10) + " 00000 n \n");
++  push("trailer\n<< /Size " + n + " /Root 1 0 R /Info " + info + " 0 R >>\nstartxref\n" + xref + "\n%%EOF\n");
++  return Buffer.concat(parts);
++}
++
++/* text lines with their position, per page (pdftotext -bbox-layout), in PDF points measured from the top */
++const unesc = (s) => String(s).replace(/&#x([0-9a-f]+);/gi, (m, h) => String.fromCodePoint(parseInt(h, 16))).replace(/&#(\d+);/g, (m, d) => String.fromCodePoint(+d))
++  .replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
++async function textLines(pdfPath, dir) {
++  try {
++    const out = path.join(dir, "bbox.html");
++    await run("pdftotext", ["-bbox-layout", pdfPath, out]);
++    const html = await fs.readFile(out, "utf8"), pages = [];
++    for (const pm of html.matchAll(/<page width="[\d.]+" height="[\d.]+">([\s\S]*?)<\/page>/g)) {
++      const lines = [];
++      for (const lm of pm[1].matchAll(/<line xMin="([\d.]+)" yMin="([\d.]+)" xMax="([\d.]+)" yMax="([\d.]+)">([\s\S]*?)<\/line>/g)) {
++        const t = unesc([...lm[5].matchAll(/<word[^>]*>([\s\S]*?)<\/word>/g)].map((w) => w[1]).join(" ")).trim();
++        if (t) lines.push({ x: +lm[1], y: +lm[2], w: +lm[3] - +lm[1], h: +lm[4] - +lm[2], t });
++      }
++      pages.push(lines);
++    }
++    return pages;
++  } catch { return []; }
++}
++
++const pageCount = async (p) => { try { const m = /Pages:\s+(\d+)/.exec(await run("pdfinfo", [p])); return m ? +m[1] : 0; } catch { return 0; } };
++const sizeOf = async (p) => (await fs.stat(p)).size;
++
++/* ---------- 1) Ghostscript: text stays vector, only pictures are downsampled ---------- */
++const GS_STEPS = [[200, 0.3], [150, 0.4], [120, 0.5], [100, 0.6]];   /* [image dpi, JPEG QFactor (higher = smaller)] */
++async function viaGhostscript(src, dir, limit, pages) {
++  const bin = process.env.GS_BIN || "gs";
++  let best = null;
++  for (const [dpi, q] of GS_STEPS) {
++    const out = path.join(dir, "gs-" + dpi + ".pdf");
++    const dict = "<< /ColorImageDict << /QFactor " + q + " /Blend 1 /HSamples [2 1 1 2] /VSamples [2 1 1 2] >> /GrayImageDict << /QFactor " + q + " /Blend 1 /HSamples [1 1 1 1] /VSamples [1 1 1 1] >> >> setdistillerparams";
++    try {
++      await run(bin, ["-q", "-dNOPAUSE", "-dBATCH", "-dSAFER", "-sDEVICE=pdfwrite", "-dCompatibilityLevel=1.5", "-dDetectDuplicateImages=true", "-dSubsetFonts=true", "-dCompressFonts=true",
++        "-dDownsampleColorImages=true", "-dDownsampleGrayImages=true", "-dDownsampleMonoImages=true", "-dColorImageDownsampleType=/Bicubic", "-dGrayImageDownsampleType=/Bicubic",
++        "-dColorImageResolution=" + dpi, "-dGrayImageResolution=" + dpi, "-dMonoImageResolution=300", "-dColorImageDownsampleThreshold=1.0", "-dGrayImageDownsampleThreshold=1.0",
++        "-dAutoFilterColorImages=false", "-dAutoFilterGrayImages=false", "-dColorImageFilter=/DCTEncode", "-dGrayImageFilter=/DCTEncode",
++        "-sOutputFile=" + out, "-c", dict, "-f", src]);
++    } catch (e) { if (e && e.code === "ENOENT") return null; continue; }   /* gs missing, or this step failed */
++    const n = await pageCount(out), sz = await sizeOf(out).catch(() => 0);
++    if (!sz || (pages && n !== pages)) continue;                               /* never accept a file that lost pages */
++    if (!best || sz < best.size) best = { path: out, size: sz, method: "ghostscript " + dpi + " dpi" };
++    if (sz <= limit) break;
++  }
++  return best;
++}
++
++/* ---------- 2) poppler: every page as a JPEG, rebuilt as a PDF with invisible text ---------- */
++const RASTER_STEPS = [[170, 80], [145, 75], [125, 70], [100, 62]];   /* [dpi, JPEG quality], best first: the first one that fits the limit is used; 100 dpi is the floor so small text stays readable */
++async function viaPoppler(src, dir, limit, pages) {
++  const lines = await textLines(src, dir);
++  let best = null;
++  for (const [dpi, q] of RASTER_STEPS) {
++    const d = path.join(dir, "r" + dpi); await fs.mkdir(d, { recursive: true });
++    try { await run("pdftoppm", ["-jpeg", "-jpegopt", "quality=" + q, "-r", String(dpi), src, path.join(d, "p")]); } catch { continue; }
++    const files = (await fs.readdir(d)).filter((f) => /^p-\d+\.jpg$/.test(f)).sort((a, b) => parseInt(a.slice(2), 10) - parseInt(b.slice(2), 10));
++    if (!files.length || (pages && files.length !== pages)) continue;
++    const pgs = []; let total = 0;
++    for (let i = 0; i < files.length; i++) {
++      const jpeg = await fs.readFile(path.join(d, files[i])), ji = jpegInfo(jpeg);
++      if (!ji) { pgs.length = 0; break; }
++      total += jpeg.length; pgs.push({ jpeg, wpt: ji.w * 72 / dpi, hpt: ji.h * 72 / dpi, lines: lines[i] || [] });
++      if (total > limit * 1.6) break;   /* far too big at this step: stop reading, try the next one (keeps RAM low) */
++    }
++    if (pgs.length !== files.length) { await fs.rm(d, { recursive: true, force: true }).catch(() => {}); continue; }
++    const out = path.join(dir, "ras-" + dpi + ".pdf"); await fs.writeFile(out, buildPdf(pgs, "Document"));
++    await fs.rm(d, { recursive: true, force: true }).catch(() => {});
++    const sz = await sizeOf(out);
++    if (!best || sz < best.size) best = { path: out, size: sz, method: "pages " + dpi + " dpi" };
++    if (sz <= limit) break;
++  }
++  return best;
++}
++
++/* ---------- lossless: same pictures, same text, just packed better ---------- */
++async function losslessPdf(src, dir, pages) {
++  const cands = [];
++  const keep = async (file, method) => { const sz = await sizeOf(file).catch(() => 0); if (sz && (!pages || (await pageCount(file)) === pages)) cands.push({ path: file, size: sz, method }); };
++  const q = path.join(dir, "ll-qpdf.pdf");
++  try { await run(process.env.QPDF_BIN || "qpdf", ["--object-streams=generate", "--recompress-flate", "--compression-level=9", "--stream-data=compress", "--remove-unreferenced-resources=yes", src, q]); await keep(q, "qpdf"); }
++  catch (e) { if (e && e.code === 3) await keep(q, "qpdf"); }   /* exit code 3 = finished with warnings: the file is still written */
++  const g = path.join(dir, "ll-gs.pdf");   /* merges duplicate fonts and images; no resampling, pictures stay lossless */
++  try {
++    await run(process.env.GS_BIN || "gs", ["-q", "-dNOPAUSE", "-dBATCH", "-dSAFER", "-sDEVICE=pdfwrite", "-dCompatibilityLevel=1.5", "-dDetectDuplicateImages=true", "-dSubsetFonts=true", "-dCompressFonts=true",
++      "-dDownsampleColorImages=false", "-dDownsampleGrayImages=false", "-dDownsampleMonoImages=false", "-dPassThroughJPEGImages=true",
++      "-dAutoFilterColorImages=false", "-dAutoFilterGrayImages=false", "-dColorImageFilter=/FlateEncode", "-dGrayImageFilter=/FlateEncode", "-sOutputFile=" + g, "-f", src]);
++    await keep(g, "ghostscript lossless");
++  } catch (e) { /* gs missing or failed: qpdf result (if any) is used */ }
++  if (!cands.length) return null;
++  cands.sort((a, b) => a.size - b.size);
++  return cands[0];
++}
++
++async function reducePdf(buffer, limit) {
++  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "red-"));
++  try {
++    const orig = path.join(dir, "in.pdf"); await fs.writeFile(orig, buffer);
++    const pages = await pageCount(orig);
++    /* step 1: lossless, for every file */
++    let ll = await losslessPdf(orig, dir, pages);
++    if (ll && ll.size >= buffer.length * 0.99) ll = null;                       /* under 1% gain: not worth changing the file */
++    const base = ll ? ll.path : orig, baseSize = ll ? ll.size : buffer.length;
++    if (baseSize <= limit) return ll ? { buffer: await fs.readFile(ll.path), method: ll.method + " (lossless)" } : null;
++    /* step 2: still over the limit: lower the quality only as far as needed */
++    let best = await viaGhostscript(base, dir, limit, pages);
++    if (!best || best.size > limit) {
++      const r = await viaPoppler(base, dir, limit, pages);
++      if (r && (!best || r.size < best.size)) best = r;
++    }
++    if (ll && (!best || ll.size < best.size)) best = ll;                          /* never end up bigger than the lossless result */
++    if (!best || best.size >= buffer.length) return null;                         /* no gain: keep the original */
++    return { buffer: await fs.readFile(best.path), method: best.method };
++  } finally { fs.rm(dir, { recursive: true, force: true }).catch(() => {}); }
++}
++
++/* ---------- images -> WebP ---------- */
++async function reduceImage(buffer, limit) {
++  if (!sharp) return null;
++  let best = null, method = "";
++  try { const ll = await sharp(buffer).webp({ lossless: true, effort: 5 }).toBuffer(); if (ll.length < buffer.length * 0.99) { best = ll; method = "webp lossless"; } } catch { /* unsupported format: try the lossy steps */ }
++  if (!best || best.length > limit) {                                            /* still over the limit: lower width and quality as far as needed */
++    for (const [w, q] of [[2400, 85], [2000, 80], [1700, 76], [1500, 72]]) {
++      const out = await sharp(buffer).rotate().resize({ width: w, withoutEnlargement: true }).webp({ quality: q }).toBuffer();
++      if (!best || out.length < best.length) { best = out; method = "webp"; }
++      if (out.length <= limit) break;
++    }
++  }
++  return best && best.length < buffer.length ? { buffer: best, method } : null;
++}
++
++/*
++ * { buffer, name, mime, kind, pdf } -> { buffer, mime, filename, reduced, overLimit, originalBytes, storedBytes, method, note }
++ * kind is the library kind (pdf / image / doc / text / sheet); `pdf` is the LibreOffice PDF of a Word / Excel / text file when there is one.
++ */
++async function reduceForStorage({ buffer, name, mime, kind, pdf }) {
++  const limit = LIMIT(), originalBytes = buffer.length;
++  const same = (note) => ({ buffer, mime, filename: name, reduced: false, overLimit: originalBytes > limit, originalBytes, storedBytes: originalBytes, method: "", note: note || "" });
++  try {
++    let r = null, outMime = mime, outName = name;
++    if (kind === "pdf") { r = await reducePdf(buffer, limit); outMime = "application/pdf"; }
++    else if (kind === "image") { r = await reduceImage(buffer, limit); outMime = "image/webp"; outName = String(name || "image").replace(/\.[a-z0-9]+$/i, "") + ".webp"; }
++    else if (originalBytes <= limit) return same();                               /* small Word / Excel / text file: already compressed, stored as uploaded */
++    else if (pdf && pdf.length) { r = await reducePdf(pdf, limit); outMime = "application/pdf"; outName = String(name || "document").replace(/\.[a-z0-9]+$/i, "") + ".pdf"; }
++    else return same("could not be reduced: the converter for this file type is not available on the server");
++    if (!r) return same(originalBytes > limit ? "could not be reduced any further" : "");
++    const over = r.buffer.length > limit;
++    console.log("[REDUCE] " + name + ": " + mb(originalBytes) + " -> " + mb(r.buffer.length) + " (" + r.method + ")" + (over ? " STILL ABOVE " + mb(limit) : ""));
++    return { buffer: r.buffer, mime: outMime, filename: outName, reduced: true, overLimit: over, originalBytes, storedBytes: r.buffer.length, method: r.method, note: over ? "reduced as far as keeps the text readable, still above the limit" : "" };
++  } catch (e) {
++    console.warn("[REDUCE] " + name + " failed:", e && e.message);
++    return same("reduction failed: " + String(e && e.message || e).slice(0, 120));
++  }
++}
++
++module.exports = { reduceForStorage, buildPdf, LIMIT };

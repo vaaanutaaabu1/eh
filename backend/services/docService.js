@@ -94,6 +94,11 @@ async function initTables() {
     await query("CREATE TABLE IF NOT EXISTS doc_flags (k VARCHAR(40) PRIMARY KEY)");
     if (!(await query("SELECT 1 FROM doc_flags WHERE k='bg_v2'")).rowCount) { await query("UPDATE doc_pages SET bg=NULL WHERE preview IS NOT NULL"); await query("INSERT INTO doc_flags(k) VALUES('bg_v2')"); }
   } catch (e) { console.warn("[DOCS] bg migration:", e.message); }
+  /* size reduction: what was uploaded, what is really stored (<= STORE_LIMIT_MB, default 5), whether it was reduced, and why not when it could not be */
+  await query("ALTER TABLE docs ADD COLUMN IF NOT EXISTS orig_bytes BIGINT");
+  await query("ALTER TABLE docs ADD COLUMN IF NOT EXISTS stored_bytes BIGINT");
+  await query("ALTER TABLE docs ADD COLUMN IF NOT EXISTS reduced BOOLEAN NOT NULL DEFAULT FALSE");
+  await query("ALTER TABLE docs ADD COLUMN IF NOT EXISTS reduce_note TEXT");
   await query("ALTER TABLE docs ADD COLUMN IF NOT EXISTS sig TEXT");      /* MinHash fingerprint of the text, used to refuse near-duplicate uploads */
   await query("ALTER TABLE docs ADD COLUMN IF NOT EXISTS nsh INT");       /* number of word shingles in the text */
   await query("ALTER TABLE docs ADD COLUMN IF NOT EXISTS fsha VARCHAR(64)");   /* sha-256 of the uploaded file: the exact same file is never stored twice */
@@ -320,7 +325,7 @@ async function officeRender(file, kind) {
   if (!imgs) return null;
   let pages = [];
   try { pages = (await extract({ buffer: pdf, originalname: "x.pdf", mimetype: "application/pdf" })).pages.map(tidy); } catch (e) { /* text is optional */ }
-  return { imgs, pages };
+  return { imgs, pages, pdf };   /* pdf: used by reduceService when the file is over the storage limit */
 }
 
 /* -> [{ full, preview }] per page, or null when sharp / poppler-utils are missing (callers then fall back to text). */

@@ -262,7 +262,7 @@
         const map={};(d.days||[]).forEach(x=>{map[x.day]=Number(x.n);});
         const base=new Date((d.todayDate||new Date().toISOString().slice(0,10))+"T00:00:00Z"),cells=[];
         for(let i=0;i<14;i++){const t=new Date(base.getTime()-i*864e5),k=t.toISOString().slice(0,10);cells.push({n:map[k]||0,label:i===0?"Today":t.toLocaleDateString("en-IN",{day:"numeric",month:"short",timeZone:"UTC"})});}
-        box.innerHTML=`<div class="ds-tiles"><div class="ds-tile"><small>Total documents uploaded</small><strong>${Number(d.total).toLocaleString("en-IN")}</strong></div><div class="ds-tile today"><small>Uploaded today</small><strong>${Number(d.today).toLocaleString("en-IN")}</strong></div></div><div class="ds-days" role="list" aria-label="Documents uploaded per day">${cells.map(c=>`<div class="ds-day${c.n?" has":""}" role="listitem"><b>${c.n}</b><small>${esc(c.label)}</small></div>`).join("")}</div>`;
+        box.innerHTML=`<div class="ds-tiles"><div class="ds-tile"><small>Total documents uploaded</small><strong>${Number(d.total).toLocaleString("en-IN")}</strong></div><div class="ds-tile today"><small>Uploaded today</small><strong>${Number(d.today).toLocaleString("en-IN")}</strong></div><div class="ds-tile"><small>Files reduced (max ${Number(d.limitMB||5)} MB each)</small><strong>${Number(d.reduced||0).toLocaleString("en-IN")}</strong><small>${bytes(Number(d.savedBytes||0))} saved${Number(d.overLimit||0)?` · ${Number(d.overLimit)} still above the limit`:""}</small></div></div><div class="ds-days" role="list" aria-label="Documents uploaded per day">${cells.map(c=>`<div class="ds-day${c.n?" has":""}" role="listitem"><b>${c.n}</b><small>${esc(c.label)}</small></div>`).join("")}</div>`;
       }catch(e){box.innerHTML='<div class="small">Could not load the upload totals.</div>';}
     }
     let docSeq=0;
@@ -275,7 +275,7 @@
         m.textContent=d.docs.length+" document"+(d.docs.length===1?"":"s");
         box.innerHTML=d.docs.length?`<div class="table-wrap"><table><thead><tr><th style="width:34px"><input type="checkbox" id="docAllChk" aria-label="Select all documents on this list"></th><th>Title / link</th><th>Uploaded by</th><th>Country</th><th>Course</th><th>Type</th><th>Pages</th><th>Views</th><th>Uploaded</th><th></th></tr></thead><tbody>${d.docs.map(x=>`<tr>
           <td><input type="checkbox" class="docChk" value="${Number(x.id)}" data-t="${esc(x.title)}" aria-label="Select ${esc(x.title)}"></td>
-          <td><b>${esc(x.title)}</b>${x.removed?' <span class="small">(hidden)</span>':""}<br><a class="small" href="/doc/${encodeURIComponent(x.slug||"")}" target="_blank" rel="nofollow noopener noreferrer">/doc/${esc(x.slug||"—")}</a></td>
+          <td><b>${esc(x.title)}</b>${x.removed?' <span class="small">(hidden)</span>':""}<br><a class="small" href="/doc/${encodeURIComponent(x.slug||"")}" target="_blank" rel="nofollow noopener noreferrer">/doc/${esc(x.slug||"—")}</a><br><span class="small">${x.stored_bytes==null?"":(x.reduced?`Reduced ${bytes(Number(x.orig_bytes))} → ${bytes(Number(x.stored_bytes))}`:`Stored ${bytes(Number(x.stored_bytes))}`)+(x.reduce_note?` (${esc(x.reduce_note)})`:"")}</span></td>
           <td><b>${esc(x.owner_name||"Guest")}</b></td>
           <td style="white-space:nowrap">${x.country_code?countryFlag({CountryCode:x.country_code,Country:ccName(x.country_code)}):'<span class="small">—</span>'}</td>
           <td><span class="small">${esc([x.course,x.school].filter(Boolean).join(" · "))}</span></td>

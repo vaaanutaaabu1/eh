@@ -30,18 +30,19 @@ r.get("/docs/stats",requireAdmin,async(req,res)=>{
     query("SELECT COUNT(*)::int AS n FROM docs"),
     query("SELECT COUNT(*)::int AS n FROM docs WHERE (created_at AT TIME ZONE $1)::date=(NOW() AT TIME ZONE $1)::date",[z]),
     query("SELECT to_char((created_at AT TIME ZONE $1)::date,'YYYY-MM-DD') AS day,COUNT(*)::int AS n FROM docs WHERE created_at>NOW()-INTERVAL '40 days' GROUP BY 1 ORDER BY 1 DESC",[z]),
-    query("SELECT to_char((NOW() AT TIME ZONE $1)::date,'YYYY-MM-DD') AS today",[z])]);
+    query("SELECT to_char((NOW() AT TIME ZONE $1)::date,'YYYY-MM-DD') AS today",[z]),
+    query("SELECT COUNT(*) FILTER (WHERE reduced)::int AS reduced, COUNT(*) FILTER (WHERE stored_bytes>$1)::int AS over, COALESCE(SUM(orig_bytes-stored_bytes) FILTER (WHERE reduced),0)::bigint AS saved FROM docs",[(Number(process.env.STORE_LIMIT_MB||5))*1048576])]);
   try{
     let d;try{d=await run(tz);}catch(e){tz="UTC";d=await run(tz);}
     res.set("Cache-Control","no-store");
-    res.json({success:true,total:d[0].rows[0].n,today:d[1].rows[0].n,todayDate:d[3].rows[0].today,days:d[2].rows,tz});
+    res.json({success:true,total:d[0].rows[0].n,today:d[1].rows[0].n,todayDate:d[3].rows[0].today,days:d[2].rows,tz,reduced:d[4].rows[0].reduced,overLimit:d[4].rows[0].over,savedBytes:Number(d[4].rows[0].saved),limitMB:Number(process.env.STORE_LIMIT_MB||5)});
   }catch(e){console.error("[ADMIN] docs stats:",e.message);res.status(500).json({success:false,message:"Could not load the totals."});}
 });
 /* Document list: uploader NAME and country flag only (no e-mail, no IP address). Searches title, course, school and uploader name. */
 r.get("/docs",requireAdmin,async(req,res)=>{
   try{
     const q=String(req.query.q||"").trim().slice(0,100);
-    const {rows}=await query(`SELECT d.id,d.title,d.slug,d.school,d.course,d.kind,d.page_count,d.views,d.created_at,d.removed,
+    const {rows}=await query(`SELECT d.id,d.title,d.slug,d.school,d.course,d.kind,d.page_count,d.views,d.created_at,d.removed,d.orig_bytes,d.stored_bytes,d.reduced,d.reduce_note,
         COALESCE(NULLIF(u.name,''),(SELECT NULLIF(l.user_name,'') FROM doc_upload_log l WHERE l.doc_id=d.id ORDER BY l.id LIMIT 1),'Guest') AS owner_name,
         NULLIF(d.up_cc,'') AS country_code,(SELECT COUNT(*)::int FROM doc_unlocks k WHERE k.doc_id=d.id) AS unlocks
       FROM docs d LEFT JOIN users u ON u.id=d.owner_id
